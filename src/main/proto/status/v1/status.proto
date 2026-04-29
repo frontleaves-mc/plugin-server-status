@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package frontleaves.status.v1;
+
+option go_package = "github.com/frontleaves-mc/frontleaves-plugin/internal/grpc/gen/status/v1;statuspb";
+option java_package = "com.frontleaves.plugins.serverStatus.grpc.generated";
+option java_outer_classname = "ServerStatusProto";
+
+import "link/base.proto";
+
+// ServerStatusService 服务器状态服务
+//
+// 处理 Minecraft 服务器上报的实时玩家状态和服务器心跳，
+// 同时提供按服务器/玩家维度的状态查询能力。
+service ServerStatusService {
+  // PlayerJoin 玩家加入服务器
+  rpc PlayerJoin(PlayerEventRequest) returns (PlayerEventResponse);
+  // PlayerQuit 玩家离开服务器
+  rpc PlayerQuit(PlayerEventRequest) returns (PlayerEventResponse);
+  // PlayerSwitchWorld 玩家切换世界
+  rpc PlayerSwitchWorld(PlayerSwitchWorldRequest) returns (PlayerEventResponse);
+  // ServerHeartbeat 服务器心跳上报
+  rpc ServerHeartbeat(ServerHeartbeatRequest) returns (ServerHeartbeatResponse);
+  // GetPlayerStatus 查询玩家在线状态
+  rpc GetPlayerStatus(GetPlayerStatusRequest) returns (GetPlayerStatusResponse);
+  // GetServerStatus 查询服务器状态
+  rpc GetServerStatus(GetServerStatusRequest) returns (GetServerStatusResponse);
+  // PlayerChat 玩家聊天消息
+  rpc PlayerChat(PlayerChatRequest) returns (PlayerEventResponse);
+  // PlayerKick 玩家被踢出
+  rpc PlayerKick(PlayerKickRequest) returns (PlayerEventResponse);
+  // PlayerDeath 玩家死亡
+  rpc PlayerDeath(PlayerDeathRequest) returns (PlayerEventResponse);
+}
+
+// PlayerEventRequest 玩家事件请求
+message PlayerEventRequest {
+  // 玩家 UUID
+  string player_uuid = 11;
+  // 玩家用户名
+  string player_name = 12;
+  // 服务器名称
+  string server_name = 13;
+  // 世界名称
+  string world_name = 14;
+}
+
+// PlayerSwitchWorldRequest 玩家切换世界请求
+message PlayerSwitchWorldRequest {
+  // 玩家 UUID
+  string player_uuid = 11;
+  // 新世界名称
+  string new_world_name = 12;
+  // 服务器名称
+  string server_name = 13;
+}
+
+// PlayerEventResponse 玩家事件响应
+message PlayerEventResponse {
+  xBase.BaseResponse base_response = 1;
+}
+
+// ServerHeartbeatRequest 服务器心跳请求
+message ServerHeartbeatRequest {
+  // 服务器名称
+  string server_name = 11;
+  // 当前在线玩家数
+  int32 online_players = 12;
+  // 服务器 TPS
+  double tps = 13;
+}
+
+// ServerHeartbeatResponse 服务器心跳响应
+message ServerHeartbeatResponse {
+  xBase.BaseResponse base_response = 1;
+}
+
+// GetPlayerStatusRequest 查询玩家状态请求
+message GetPlayerStatusRequest {
+  // 玩家 UUID
+  string player_uuid = 11;
+}
+
+// GetPlayerStatusResponse 查询玩家状态响应
+message GetPlayerStatusResponse {
+  xBase.BaseResponse base_response = 1;
+  // 是否在线
+  bool online = 11;
+  // 所在服务器名称
+  string server_name = 12;
+  // 所在世界名称
+  string world_name = 13;
+  // 玩家用户名
+  string player_name = 14;
+  // 最后在线时间（Unix 毫秒）
+  int64 last_seen = 15;
+}
+
+// GetServerStatusRequest 查询服务器状态请求
+message GetServerStatusRequest {
+  // 服务器名称
+  string server_name = 11;
+}
+
+// GetServerStatusResponse 查询服务器状态响应
+message GetServerStatusResponse {
+  xBase.BaseResponse base_response = 1;
+  // 在线玩家列表
+  repeated PlayerStatus players = 11;
+  // 在线玩家数
+  int32 online_players = 12;
+  // 服务器 TPS
+  double tps = 13;
+  // 最后心跳时间（Unix 毫秒）
+  int64 last_heartbeat = 14;
+}
+
+// PlayerStatus 玩家状态信息
+message PlayerStatus {
+  // 玩家 UUID
+  string player_uuid = 1;
+  // 玩家用户名
+  string player_name = 2;
+  // 所在世界名称
+  string world_name = 3;
+}
+
+// PlayerChatRequest 玩家聊天请求
+message PlayerChatRequest {
+  string player_uuid = 11;
+  string player_name = 12;
+  string server_name = 13;
+  string world_name = 14;
+  string message = 15;
+}
+
+// PlayerKickRequest 玩家被踢请求
+message PlayerKickRequest {
+  string player_uuid = 11;
+  string player_name = 12;
+  string server_name = 13;
+  string world_name = 14;
+  string reason = 15;
+}
+
+// PlayerDeathRequest 玩家死亡请求
+message PlayerDeathRequest {
+  string player_uuid = 11;
+  string player_name = 12;
+  string server_name = 13;
+  string world_name = 14;
+  string death_message = 15;
+}

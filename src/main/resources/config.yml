@@ -1,0 +1,7 @@
+grpc:
+  host: "localhost"
+  port: 50051
+  server-name: "survival"
+  heartbeat-interval-seconds: 5
+auth:
+  plugin-secret-key: ""

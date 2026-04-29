@@ -1,0 +1,17 @@
+name: server-status
+description: $description
+prefix: FLSS
+version: '${version}'
+
+main: com.frontleaves.plugins.serverStatus.ServerStatus
+api-version: '1.21.1'
+load: POSTWORLD
+
+dependencies:
+  server:
+    FrontleavesLib:
+      required: true
+      load: BEFORE
+
+authors: [ xiao_lfeng ]
+website: https://www.frontleaves.com
