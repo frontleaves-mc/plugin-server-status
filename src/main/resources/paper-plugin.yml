@@ -9,7 +9,7 @@ load: POSTWORLD
 
 dependencies:
   server:
-    FrontleavesLib:
+    frontleaves-lib:
       required: true
       load: BEFORE
 

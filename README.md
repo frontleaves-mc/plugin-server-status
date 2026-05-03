@@ -4,27 +4,26 @@ FrontLeaves MC 服务器状态监控插件——通过 gRPC Unary RPC 将 Minecr
 
 ## 架构
 
-```
-┌────────────────────────────────────────────────────────┐
-│              Minecraft Server (Paper 1.21.1)            │
-│                                                        │
-│  ┌──────────────┐   ┌──────────────────┐               │
-│  │ StatusCollector│  │  EventListener   │               │
-│  │  (TPS 计算)    │  │  (6 个事件处理器) │               │
-│  └──────┬───────┘   └────────┬─────────┘               │
-│         │                    │                          │
-│         └────────┬───────────┘                          │
-│                  ▼                                      │
-│  ┌───────────────────────┐                              │
-│  │   StatusGrpcService   │  (BlockingStub + safeCall)   │
-│  └───────────┬───────────┘                              │
-│              │ gRPC (plugin-name + plugin-secret-key)   │
-└──────────────┼─────────────────────────────────────────┘
-               ▼
-┌──────────────────────────────────────────────────────────┐
-│                frontleaves-plugin (Go 后端)                │
-│         ServerStatusService → Redis → RESTful API        │
-└──────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph MC["Minecraft Server (Paper 1.21.1)"]
+        SC["StatusCollector<br/>(TPS 计算)"]
+        EL["EventListener<br/>(6 个事件处理器)"]
+        SGS["StatusGrpcService<br/>(BlockingStub + safeCall)"]
+    end
+
+    SC --> SGS
+    EL --> SGS
+    SGS -- "gRPC (plugin-name + plugin-secret-key)" --> GO
+
+    subgraph GO["frontleaves-plugin (Go 后端)"]
+        SSS["ServerStatusService"]
+        RD["Redis"]
+        API["RESTful API"]
+    end
+
+    SSS --> RD
+    RD --> API
 ```
 
 ## 功能
