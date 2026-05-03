@@ -2,7 +2,9 @@ package com.frontleaves.plugins.serverStatus.service;
 
 import org.bukkit.Bukkit;
 
-import java.util.LinkedList;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 服务器状态采集器，负责 TPS 计算和在线玩家数统计。
@@ -17,16 +19,20 @@ public class StatusCollector {
 
     private static final int TICKS_INSTANT = 100;
     private static final int MAX_TICK_HISTORY = 13000;
+    private static final double MAX_TPS = 20.0;
 
-    private final LinkedList<Long> tickTimestamps = new LinkedList<>();
+    private final ConcurrentLinkedDeque<Long> tickTimestamps = new ConcurrentLinkedDeque<>();
+    private final AtomicInteger tickCount = new AtomicInteger(0);
 
     /**
      * 每个游戏 tick 调用一次，记录时间戳用于计算 TPS。
      */
     public void recordTick() {
-        tickTimestamps.add(System.currentTimeMillis());
-        if (tickTimestamps.size() > MAX_TICK_HISTORY) {
-            tickTimestamps.removeFirst();
+        tickTimestamps.addLast(System.currentTimeMillis());
+        int size = tickCount.incrementAndGet();
+        if (size > MAX_TICK_HISTORY) {
+            tickTimestamps.pollFirst();
+            tickCount.decrementAndGet();
         }
     }
 
@@ -36,7 +42,7 @@ public class StatusCollector {
      * @return 当前 TPS 值，上限为 20.0
      */
     public double calculateTps() {
-        return calculateTpsForWindow(TICKS_INSTANT);
+        return this.calculateTpsForWindow(TICKS_INSTANT);
     }
 
     /**
@@ -46,17 +52,34 @@ public class StatusCollector {
      * @return 窗口内的 TPS 值，上限为 20.0
      */
     public double calculateTpsForWindow(int maxTicks) {
-        int size = Math.min(tickTimestamps.size(), maxTicks);
+        int size = Math.min(tickCount.get(), maxTicks);
         if (size < 2) {
-            return 20.0;
+            return MAX_TPS;
         }
-        long first = tickTimestamps.get(tickTimestamps.size() - size);
-        long last = tickTimestamps.getLast();
+        Long last = tickTimestamps.peekLast();
+        if (last == null) {
+            return MAX_TPS;
+        }
+        long first = getFromEnd(size);
         long elapsed = last - first;
         if (elapsed <= 0) {
-            return 20.0;
+            return MAX_TPS;
         }
-        return Math.min((size - 1) * 1000.0 / elapsed, 20.0);
+        return Math.min((size - 1) * 1000.0 / elapsed, MAX_TPS);
+    }
+
+    private long getFromEnd(int fromEnd) {
+        int targetIndex = tickCount.get() - fromEnd;
+        Iterator<Long> it = tickTimestamps.iterator();
+        int currentIndex = 0;
+        while (it.hasNext()) {
+            Long value = it.next();
+            if (currentIndex == targetIndex) {
+                return value;
+            }
+            currentIndex++;
+        }
+        return System.currentTimeMillis();
     }
 
     /**
