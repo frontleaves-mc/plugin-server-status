@@ -1,6 +1,6 @@
 # Server-Status
 
-FrontLeaves MC 服务器状态监控插件——通过 gRPC Unary RPC 将 Minecraft 服务器实时状态与玩家事件上报至 Go 后端。
+FrontLeaves MC 服务器状态监控插件——通过 gRPC 将 Minecraft 服务器实时状态与玩家事件上报至 Go 后端，并支持双向流式查询通道。
 
 ## 架构
 
@@ -9,12 +9,17 @@ flowchart TB
     subgraph MC["Minecraft Server (Paper 1.21.1)"]
         SC["StatusCollector<br/>(TPS 计算)"]
         EL["EventListener<br/>(6 个事件处理器)"]
-        SGS["StatusGrpcService<br/>(BlockingStub + safeCall)"]
+        LPH["LuckPermsHook<br/>(权限组变更监听)"]
+        SGS["StatusGrpcService<br/>(BlockingStub + AsyncStub)"]
+        SQSH["ServerQueryStreamHandler<br/>(双向流 + 自动重连)"]
     end
 
     SC --> SGS
     EL --> SGS
-    SGS -- "gRPC (plugin-name + plugin-secret-key)" --> GO
+    LPH --> SGS
+    SGS -- "Unary RPC (plugin-name + plugin-secret-key)" --> GO
+    SGS -- "AsyncStub" --> SQSH
+    SQSH <--> |"双向流"| GO
 
     subgraph GO["frontleaves-plugin (Go 后端)"]
         SSS["ServerStatusService"]
@@ -29,9 +34,12 @@ flowchart TB
 ## 功能
 
 - **服务器心跳**：定时上报在线玩家数、TPS
-- **玩家事件**：加入、离开、切换世界、聊天、踢出、死亡
+- **玩家事件**：加入（含权限组）、离开、切换世界、聊天、踢出、死亡
+- **权限组变更监听**：通过 LuckPerms EventBus 监听权限组变更并上报
+- **双向流式查询**：Go 后端可实时查询玩家状态、服务器状态、权限检查、权限组信息
 - **认证机制**：通过 `plugin-name` + `plugin-secret-key` gRPC metadata 鉴权
 - **空密钥保护**：未配置 `plugin-secret-key` 时拒绝启动
+- **优雅降级**：LuckPerms 未安装时自动跳过权限相关功能
 
 ## 技术栈
 
@@ -40,9 +48,10 @@ flowchart TB
 | 语言 | Java 21 |
 | 平台 | Paper API 1.21.1 |
 | 构建 | Maven |
-| 通信 | gRPC (Unary RPC) |
+| 通信 | gRPC (Unary RPC + 双向流式 RPC) |
 | Protobuf | 3.25.3 |
 | gRPC 版本 | 1.62.2 |
+| 权限 | LuckPerms API 5.5（软依赖） |
 | 依赖库 | [frontleaves-lib](../frontleaves-lib) |
 
 ## 快速开始
@@ -88,10 +97,13 @@ auth:
 │   │   ├── link/base.proto                          # BaseResponse 统一响应定义
 │   │   └── status/v1/status.proto                   # ServerStatusService (9 RPC)
 │   ├── java/.../serverStatus/
-│   │   ├── ServerStatus.java                        # 主类：生命周期管理
-│   │   ├── grpc/StatusGrpcService.java              # gRPC 客户端 (BlockingStub)
+│   │   ├── ServerStatus.java                        # 主类：生命周期管理、组件初始化
+│   │   ├── grpc/
+│   │   │   ├── StatusGrpcService.java               # gRPC 客户端 (BlockingStub + AsyncStub)
+│   │   │   └── ServerQueryStreamHandler.java        # 双向流处理器 (自动重连 + 指数退避)
 │   │   ├── listener/EventListener.java              # Bukkit 事件监听 (6 事件)
-│   │   └── service/StatusCollector.java             # TPS 计算器
+│   │   ├── luckperms/LuckPermsHook.java             # LuckPerms EventBus 集成 + 权限组缓存
+│   │   └── service/StatusCollector.java             # TPS 计算器 + 在线玩家数统计
 │   └── resources/
 │       ├── config.yml                               # 默认配置
 │       └── paper-plugin.yml                         # Paper 插件描述
@@ -100,17 +112,33 @@ auth:
 
 ## RPC 列表
 
+### Unary RPC (Java -> Go, BlockingStub)
+
 | RPC | 方向 | Go 端状态 | 说明 |
 |-----|------|-----------|------|
-| `PlayerJoin` | Java → Go | ✅ 已实现 | 玩家加入 |
-| `PlayerQuit` | Java → Go | ✅ 已实现 | 玩家离开 |
-| `PlayerSwitchWorld` | Java → Go | ✅ 已实现 | 切换世界 |
-| `ServerHeartbeat` | Java → Go | ✅ 已实现 | 心跳上报 |
-| `GetPlayerStatus` | Go → Redis | ✅ 已实现 | 查询玩家状态（Java 端未调用） |
-| `GetServerStatus` | Go → Redis | ✅ 已实现 | 查询服务器状态（Java 端未调用） |
-| `PlayerChat` | Java → Go | 🚧 待实现 | 聊天消息 |
-| `PlayerKick` | Java → Go | 🚧 待实现 | 被踢出 |
-| `PlayerDeath` | Java → Go | 🚧 待实现 | 死亡 |
+| `PlayerJoin` | Java -> Go | ✅ 已实现 | 玩家加入（含 groupName） |
+| `PlayerQuit` | Java -> Go | ✅ 已实现 | 玩家离开 |
+| `PlayerSwitchWorld` | Java -> Go | ✅ 已实现 | 切换世界 |
+| `ServerHeartbeat` | Java -> Go | ✅ 已实现 | 心跳上报（在线玩家数 + TPS） |
+| `PlayerChat` | Java -> Go | 🚧 待实现 | 聊天消息 |
+| `PlayerKick` | Java -> Go | 🚧 待实现 | 被踢出 |
+| `PlayerDeath` | Java -> Go | 🚧 待实现 | 死亡 |
+| `PlayerGroupChange` | Java -> Go | ✅ 已实现 | 权限组变更（LuckPerms 触发） |
+
+### 双向流式 RPC (AsyncStub)
+
+| RPC | 方向 | Go 端状态 | 说明 |
+|-----|------|-----------|------|
+| `ServerQuery` | Go <-> Java | ✅ 已实现 | Go 发送查询请求，Java 处理并返回结果 |
+
+#### ServerQuery 支持的查询事件
+
+| 事件 | 编号 | 依赖 | 说明 |
+|------|------|------|------|
+| `QUERY_EVENT_GET_PLAYER_STATUS` | 1 | 无 | 查询玩家在线状态、所在服务器/世界 |
+| `QUERY_EVENT_GET_SERVER_STATUS` | 2 | 无 | 查询在线玩家列表、TPS |
+| `QUERY_EVENT_CHECK_PERMISSION` | 3 | LuckPerms | 检查玩家权限节点 |
+| `QUERY_EVENT_GET_PLAYER_GROUPS` | 4 | LuckPerms | 获取玩家主权限组和所有权限组 |
 
 ## 相关项目
 

@@ -67,6 +67,12 @@
             <version>1.3.2</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>net.luckperms</groupId>
+            <artifactId>api</artifactId>
+            <version>5.5</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -119,6 +125,10 @@
         <repository>
             <id>papermc-repo</id>
             <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+        <repository>
+            <id>luckperms-repo</id>
+            <url>https://repo.lucko.me/</url>
         </repository>
     </repositories>
 </project>

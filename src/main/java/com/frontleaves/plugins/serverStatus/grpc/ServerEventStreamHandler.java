@@ -31,6 +31,7 @@ public class ServerEventStreamHandler {
 
     private volatile StreamObserver<ServerStatusProto.ServerEventStreamRequest> requestObserver;
     private volatile boolean running = false;
+    private volatile long generation = 0;
     private long retryDelayMs = INITIAL_RETRY_DELAY_MS;
 
     public ServerEventStreamHandler(
@@ -58,6 +59,7 @@ public class ServerEventStreamHandler {
      */
     public void connect() {
         running = true;
+        final long currentGeneration = ++generation;
         StreamObserver<ServerStatusProto.ServerEventStreamResponse> responseObserver = new StreamObserver<>() {
             @Override
             public void onNext(ServerStatusProto.ServerEventStreamResponse value) {
@@ -66,6 +68,10 @@ public class ServerEventStreamHandler {
 
             @Override
             public void onError(Throwable t) {
+                // 忽略旧流的延迟回调，避免误杀新流
+                if (currentGeneration != generation) {
+                    return;
+                }
                 plugin.getLogger().warning("ServerEventStream 流错误: "
                         + Optional.ofNullable(t.getMessage()).orElse(t.getClass().getSimpleName()));
                 synchronized (ServerEventStreamHandler.this) {
@@ -78,6 +84,10 @@ public class ServerEventStreamHandler {
 
             @Override
             public void onCompleted() {
+                // 忽略旧流的延迟回调，避免误杀新流
+                if (currentGeneration != generation) {
+                    return;
+                }
                 plugin.getLogger().info("ServerEventStream 流已关闭");
                 synchronized (ServerEventStreamHandler.this) {
                     requestObserver = null;
@@ -91,7 +101,7 @@ public class ServerEventStreamHandler {
             requestObserver = asyncStub.serverEventStream(responseObserver);
         }
         retryDelayMs = INITIAL_RETRY_DELAY_MS;
-        plugin.getLogger().info("ServerEventStream Client Stream 已建立");
+        plugin.getLogger().info("ServerEventStream Client Stream 已建立 [generation=" + currentGeneration + "]");
     }
 
     private void scheduleReconnect() {

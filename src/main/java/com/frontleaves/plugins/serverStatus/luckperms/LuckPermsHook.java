@@ -107,19 +107,29 @@ public class LuckPermsHook {
         UUID uuid = event.getUser().getUniqueId();
         String newGroup = event.getUser().getPrimaryGroup();
         String oldGroup = groupCache.get(uuid);
+
+        // 首次出现时 oldGroup 为 null，说明是初始化而非变更，跳过上报
+        // PlayerJoinEvent 已经携带了权限组信息，无需重复发送
+        if (oldGroup == null) {
+            groupCache.put(uuid, newGroup);
+            return;
+        }
+
         if (newGroup.equals(oldGroup)) {
             return;
         }
         groupCache.put(uuid, newGroup);
+
+        // 优先从在线玩家获取名称，回退到 User 对象的 username
         String playerName = Optional.ofNullable(Bukkit.getPlayer(uuid))
                 .map(p -> p.getName())
-                .orElse("");
+                .orElseGet(() -> Optional.ofNullable(event.getUser().getUsername()).orElse(""));
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             grpcService.playerGroupChange(
                     uuid.toString(),
                     playerName,
                     newGroup,
-                    Optional.ofNullable(oldGroup).orElse("")
+                    oldGroup
             );
         });
     }

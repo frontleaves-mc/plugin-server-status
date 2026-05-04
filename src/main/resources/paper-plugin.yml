@@ -12,6 +12,9 @@ dependencies:
     frontleaves-lib:
       required: true
       load: BEFORE
+    LuckPerms:
+      required: false
+      load: BEFORE
 
 authors: [ xiao_lfeng ]
 website: https://www.frontleaves.com
