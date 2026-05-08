@@ -74,7 +74,7 @@ public final class ServerStatus extends JavaPlugin {
 
         heartbeatTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             try {
-                grpcService.heartbeat(statusCollector.getOnlinePlayerCount(), statusCollector.calculateTps());
+                grpcService.heartbeat(statusCollector.calculateTps());
             } catch (Exception e) {
                 Message.of(this, "监控").console().warning("心跳上报失败：<white>" + Optional.ofNullable(e.getMessage()).orElse(e.getClass().getSimpleName()));
             }

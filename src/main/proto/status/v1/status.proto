@@ -83,10 +83,8 @@ message ServerEventStreamResponse {
 message HeartbeatEvent {
   // 服务器名称
   string server_name = 1;
-  // 当前在线玩家数
-  int32 online_players = 2;
   // 服务器 TPS
-  double tps = 3;
+  double tps = 2;
 }
 
 // PlayerJoinEvent 玩家加入事件

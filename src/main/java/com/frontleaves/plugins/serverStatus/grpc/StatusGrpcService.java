@@ -73,14 +73,13 @@ public class StatusGrpcService {
     }
 
     /**
-     * 服务器心跳上报
+     * 服务器心跳上报（仅 TPS，在线人数由 Go 后端通过 Redis 自动计算）
      */
-    public void heartbeat(int onlinePlayers, double tps) {
+    public void heartbeat(double tps) {
         eventStreamHandler.sendEvent(ServerStatusProto.ServerEventStreamRequest.newBuilder()
                 .setEventType(ServerStatusProto.ServerEventType.SERVER_EVENT_TYPE_HEARTBEAT)
                 .setHeartbeatEvent(ServerStatusProto.HeartbeatEvent.newBuilder()
                         .setServerName(serverName)
-                        .setOnlinePlayers(onlinePlayers)
                         .setTps(tps)
                         .build())
                 .build());
