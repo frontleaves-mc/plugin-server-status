@@ -85,6 +85,10 @@ message HeartbeatEvent {
   string server_name = 1;
   // 服务器 TPS
   double tps = 2;
+  // 在线玩家数量
+  int32 online_player = 3;
+  // 在线玩家列表
+  repeated PlayerStatus players = 4;
 }
 
 // PlayerJoinEvent 玩家加入事件

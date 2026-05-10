@@ -8,6 +8,7 @@ import com.frontleaves.plugins.serverStatus.grpc.StatusGrpcService;
 import com.frontleaves.plugins.serverStatus.listener.EventListener;
 import com.frontleaves.plugins.serverStatus.luckperms.LuckPermsHook;
 import com.frontleaves.plugins.serverStatus.service.StatusCollector;
+import com.frontleaves.plugins.serverStatus.grpc.generated.ServerStatusProto;
 import io.grpc.ManagedChannel;
 import net.luckperms.api.LuckPerms;
 import org.bukkit.Bukkit;
@@ -74,7 +75,15 @@ public final class ServerStatus extends JavaPlugin {
 
         heartbeatTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             try {
-                grpcService.heartbeat(statusCollector.calculateTps());
+                var players = new java.util.ArrayList<ServerStatusProto.PlayerStatus>();
+                for (var player : Bukkit.getOnlinePlayers()) {
+                    players.add(ServerStatusProto.PlayerStatus.newBuilder()
+                            .setPlayerUuid(player.getUniqueId().toString())
+                            .setPlayerName(player.getName())
+                            .setWorldName(player.getWorld().getName())
+                            .build());
+                }
+                grpcService.heartbeat(statusCollector.calculateTps(), players.size(), players);
             } catch (Exception e) {
                 Message.of(this, "监控").console().warning("心跳上报失败：<white>" + Optional.ofNullable(e.getMessage()).orElse(e.getClass().getSimpleName()));
             }

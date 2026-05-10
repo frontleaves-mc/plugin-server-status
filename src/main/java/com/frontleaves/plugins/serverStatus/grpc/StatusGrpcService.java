@@ -1,7 +1,10 @@
 package com.frontleaves.plugins.serverStatus.grpc;
 
 import com.frontleaves.plugins.serverStatus.grpc.generated.ServerStatusProto;
+
 import org.jetbrains.annotations.NotNull;
+
+import java.util.List;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -73,14 +76,17 @@ public class StatusGrpcService {
     }
 
     /**
-     * 服务器心跳上报（仅 TPS，在线人数由 Go 后端通过 Redis 自动计算）
+     * 服务器心跳上报，携带 TPS、在线玩家数和在线玩家列表。
+     * Go 后端使用玩家列表进行定期对账，防止 Redis 缓存过期导致玩家离线误判。
      */
-    public void heartbeat(double tps) {
+    public void heartbeat(double tps, int onlinePlayerCount, @NotNull List<ServerStatusProto.PlayerStatus> players) {
         eventStreamHandler.sendEvent(ServerStatusProto.ServerEventStreamRequest.newBuilder()
                 .setEventType(ServerStatusProto.ServerEventType.SERVER_EVENT_TYPE_HEARTBEAT)
                 .setHeartbeatEvent(ServerStatusProto.HeartbeatEvent.newBuilder()
                         .setServerName(serverName)
                         .setTps(tps)
+                        .setOnlinePlayer(onlinePlayerCount)
+                        .addAllPlayers(players)
                         .build())
                 .build());
     }
