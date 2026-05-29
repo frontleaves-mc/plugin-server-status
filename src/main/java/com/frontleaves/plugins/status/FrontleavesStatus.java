@@ -29,7 +29,8 @@ public final class FrontleavesStatus extends JavaPlugin {
     private StatusCollector statusCollector;
     private BukkitTask heartbeatTask;
     private BukkitTask tickTask;
-    private volatile boolean channelReady = true;
+    private BukkitTask snapshotTask;
+    private volatile boolean channelReady = false;
 
     @Override
     public void onEnable() {
@@ -50,6 +51,10 @@ public final class FrontleavesStatus extends JavaPlugin {
 
         statusCollector = new StatusCollector();
         tickTask = Bukkit.getScheduler().runTaskTimer(this, statusCollector::recordTick, 1L, 1L);
+
+        snapshotTask = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            statusCollector.refreshSnapshot();
+        }, heartbeatInterval * 20L, heartbeatInterval * 20L);
 
         // 监控通道连接状态
         ConnectivityMonitor monitor = lib.createConnectivityMonitor(this, channel, "frontleaves-status");
@@ -88,6 +93,7 @@ public final class FrontleavesStatus extends JavaPlugin {
 
         // 注册通道重载回调
         lib.registerPlugin("frontleaves-status", newChannel -> {
+            channelReady = false;
             channel = newChannel;
             var newAsyncStub = ServerStatusServiceGrpc.newStub(newChannel);
 
@@ -121,8 +127,16 @@ public final class FrontleavesStatus extends JavaPlugin {
             Message.of(this, "监控").console().info("Tick 计时任务已取消");
         }
 
+        if (snapshotTask != null) {
+            snapshotTask.cancel();
+            Message.of(this, "监控").console().info("快照定时器已取消");
+        }
+
+        channelReady = false;
+
         if (eventStreamHandler != null) {
             eventStreamHandler.shutdown();
+            eventStreamHandler = null;
         }
 
         // 通道由 frontleaves-lib 统一管理，不在此处关闭

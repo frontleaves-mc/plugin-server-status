@@ -7,9 +7,8 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.lang.management.ManagementFactory;
-import java.util.Iterator;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * 服务器状态采集器，负责 TPS 计算和系统信息采集。
@@ -27,18 +26,24 @@ public class StatusCollector {
     private static final int MAX_TICK_HISTORY = 13000;
     private static final double MAX_TPS = 20.0;
 
-    private final ConcurrentLinkedDeque<Long> tickTimestamps = new ConcurrentLinkedDeque<>();
-    private final AtomicInteger tickCount = new AtomicInteger(0);
+    private final ReentrantReadWriteLock tickLock = new ReentrantReadWriteLock();
+    private final long[] tickBuffer = new long[MAX_TICK_HISTORY];
+    private long writeCounter = 0;
+
+    private volatile int onlinePlayerCount = 0;
+    private volatile List<ServerStatusProto.WorldInfo> worldSnapshot = List.of();
+    private volatile double lastValidCpuPercent = 0.0;
 
     /**
      * 每个游戏 tick 调用一次，记录时间戳用于计算 TPS。
      */
     public void recordTick() {
-        tickTimestamps.addLast(System.currentTimeMillis());
-        int size = tickCount.incrementAndGet();
-        if (size > MAX_TICK_HISTORY) {
-            tickTimestamps.pollFirst();
-            tickCount.decrementAndGet();
+        tickLock.writeLock().lock();
+        try {
+            tickBuffer[(int) (writeCounter % MAX_TICK_HISTORY)] = System.currentTimeMillis();
+            writeCounter++;
+        } finally {
+            tickLock.writeLock().unlock();
         }
     }
 
@@ -58,34 +63,38 @@ public class StatusCollector {
      * @return 窗口内的 TPS 值，上限为 20.0
      */
     public double calculateTpsForWindow(int maxTicks) {
-        int size = Math.min(tickCount.get(), maxTicks);
-        if (size < 2) {
-            return MAX_TPS;
+        tickLock.readLock().lock();
+        try {
+            int effectiveSize = Math.min((int) writeCounter, maxTicks);
+            if (effectiveSize < 2) {
+                return MAX_TPS;
+            }
+            long currentWrite = writeCounter;
+            long lastTick = tickBuffer[(int) ((currentWrite - 1) % MAX_TICK_HISTORY)];
+            long firstTick = tickBuffer[(int) ((currentWrite - effectiveSize) % MAX_TICK_HISTORY)];
+            long elapsed = lastTick - firstTick;
+            if (elapsed <= 0) {
+                return MAX_TPS;
+            }
+            return Math.min((effectiveSize - 1) * 1000.0 / elapsed, MAX_TPS);
+        } finally {
+            tickLock.readLock().unlock();
         }
-        Long last = tickTimestamps.peekLast();
-        if (last == null) {
-            return MAX_TPS;
-        }
-        long first = getFromEnd(size);
-        long elapsed = last - first;
-        if (elapsed <= 0) {
-            return MAX_TPS;
-        }
-        return Math.min((size - 1) * 1000.0 / elapsed, MAX_TPS);
     }
 
-    private long getFromEnd(int fromEnd) {
-        int targetIndex = tickCount.get() - fromEnd;
-        Iterator<Long> it = tickTimestamps.iterator();
-        int currentIndex = 0;
-        while (it.hasNext()) {
-            Long value = it.next();
-            if (currentIndex == targetIndex) {
-                return value;
-            }
-            currentIndex++;
-        }
-        return System.currentTimeMillis();
+    /**
+     * 刷新玩家数量和世界快照。必须在主线程调用。
+     */
+    public void refreshSnapshot() {
+        onlinePlayerCount = Bukkit.getOnlinePlayers().size();
+        worldSnapshot = Bukkit.getWorlds().stream()
+                .map(world -> ServerStatusProto.WorldInfo.newBuilder()
+                        .setWorldName(world.getName())
+                        .setPlayerCount(world.getPlayers().size())
+                        .setEntityCount(world.getEntities().size())
+                        .setLoadedChunks(world.getLoadedChunks().length)
+                        .build())
+                .toList();
     }
 
     /**
@@ -94,7 +103,7 @@ public class StatusCollector {
      * @return 在线玩家数
      */
     public int getOnlinePlayerCount() {
-        return Bukkit.getOnlinePlayers().size();
+        return onlinePlayerCount;
     }
 
     /**
@@ -104,9 +113,17 @@ public class StatusCollector {
      */
     public @NotNull ServerStatusProto.CpuInfo collectCpuInfo() {
         OperatingSystemMXBean osBean = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class);
+        double load = osBean.getProcessCpuLoad();
+        double percent;
+        if (load >= 0.0) {
+            percent = load * 100.0;
+            lastValidCpuPercent = percent;
+        } else {
+            percent = lastValidCpuPercent;
+        }
         return ServerStatusProto.CpuInfo.newBuilder()
                 .setCores(Runtime.getRuntime().availableProcessors())
-                .setUsagePercent(osBean.getProcessCpuLoad() * 100.0)
+                .setUsagePercent(percent)
                 .build();
     }
 
@@ -172,13 +189,6 @@ public class StatusCollector {
      * @return 世界信息 protobuf 消息列表
      */
     public @NotNull Iterable<ServerStatusProto.WorldInfo> collectWorldInfos() {
-        return Bukkit.getWorlds().stream()
-                .map(world -> ServerStatusProto.WorldInfo.newBuilder()
-                        .setWorldName(world.getName())
-                        .setPlayerCount(world.getPlayers().size())
-                        .setEntityCount(world.getEntities().size())
-                        .setLoadedChunks(world.getLoadedChunks().length)
-                        .build())
-                .toList();
+        return worldSnapshot;
     }
 }

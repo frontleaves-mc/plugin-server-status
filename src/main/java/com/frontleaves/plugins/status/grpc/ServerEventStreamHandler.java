@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * ServerEventStream Client Stream 处理器，负责建立持续的事件上报流。
@@ -32,7 +33,7 @@ public class ServerEventStreamHandler {
     private volatile StreamObserver<ServerStatusProto.ServerEventStreamRequest> requestObserver;
     private volatile boolean running = false;
     private volatile long generation = 0;
-    private long retryDelayMs = INITIAL_RETRY_DELAY_MS;
+    private final AtomicLong retryDelayMs = new AtomicLong(INITIAL_RETRY_DELAY_MS);
 
     public ServerEventStreamHandler(
             @NotNull JavaPlugin plugin,
@@ -100,18 +101,18 @@ public class ServerEventStreamHandler {
         synchronized (this) {
             requestObserver = asyncStub.serverEventStream(responseObserver);
         }
-        retryDelayMs = INITIAL_RETRY_DELAY_MS;
+        retryDelayMs.set(INITIAL_RETRY_DELAY_MS);
         plugin.getLogger().info("ServerEventStream Client Stream 已建立 [generation=" + currentGeneration + "]");
     }
 
     private void scheduleReconnect() {
-        plugin.getLogger().info("ServerEventStream 将在 " + (retryDelayMs / 1000) + " 秒后重连...");
+        plugin.getLogger().info("ServerEventStream 将在 " + (retryDelayMs.get() / 1000) + " 秒后重连...");
         retryExecutor.schedule(() -> {
             if (running) {
                 connect();
             }
-        }, retryDelayMs, TimeUnit.MILLISECONDS);
-        retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_DELAY_MS);
+        }, retryDelayMs.get(), TimeUnit.MILLISECONDS);
+        retryDelayMs.updateAndGet(d -> Math.min(d * 2, MAX_RETRY_DELAY_MS));
     }
 
     /**
@@ -143,9 +144,11 @@ public class ServerEventStreamHandler {
         }
         try {
             observer.onNext(event);
-        } catch (Exception e) {
-            plugin.getLogger().warning("ServerEventStream 发送事件失败: "
+        } catch (IllegalStateException e) {
+            plugin.getLogger().fine("Event dropped, stream already closed: "
                     + Optional.ofNullable(e.getMessage()).orElse(e.getClass().getSimpleName()));
+        } catch (io.grpc.StatusRuntimeException e) {
+            plugin.getLogger().warning("gRPC transport error on send: " + e.getStatus());
         }
     }
 }
