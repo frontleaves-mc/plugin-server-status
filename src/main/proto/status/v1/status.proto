@@ -3,26 +3,20 @@ syntax = "proto3";
 package frontleaves.status.v1;
 
 option go_package = "github.com/frontleaves-mc/frontleaves-plugin/internal/grpc/gen/status/v1;statuspb";
-option java_package = "com.frontleaves.plugins.serverStatus.grpc.generated";
+option java_package = "com.frontleaves.plugins.status.grpc.generated";
 option java_outer_classname = "ServerStatusProto";
 
 import "link/base.proto";
 
 // ServerStatusService 服务器状态服务
 //
-// 使用 Client Stream 接收 Java 插件持续上报的事件，
-// 并通过双向流式 RPC 提供按服务器/玩家维度的实时查询能力。
+// 使用 Client Stream 接收 Java 插件持续上报的心跳事件，
+// 携带 TPS、CPU、内存、磁盘、JVM、版本和世界信息。
 service ServerStatusService {
   // ServerEventStream 事件上报流（Client Stream）
-  // Java 插件建立一次连接后持续发送各类事件
+  // Java 插件建立一次连接后持续发送心跳事件
   rpc ServerEventStream(stream ServerEventStreamRequest) returns (ServerEventStreamResponse);
-  // ServerQuery 双向流式 RPC，Go 端发送查询请求，Java 端处理并返回结果
-  rpc ServerQuery(stream ServerQueryRequest) returns (stream ServerQueryResponse);
 }
-
-// ============================================================================
-// ServerEventStream 相关消息
-// ============================================================================
 
 // ServerEventType 事件类型枚举
 enum ServerEventType {
@@ -30,24 +24,9 @@ enum ServerEventType {
   SERVER_EVENT_TYPE_UNSPECIFIED = 0;
   // 心跳
   SERVER_EVENT_TYPE_HEARTBEAT = 1;
-  // 玩家加入
-  SERVER_EVENT_TYPE_PLAYER_JOIN = 2;
-  // 玩家离开
-  SERVER_EVENT_TYPE_PLAYER_QUIT = 3;
-  // 玩家切换世界
-  SERVER_EVENT_TYPE_PLAYER_SWITCH_WORLD = 4;
-  // 玩家聊天
-  SERVER_EVENT_TYPE_PLAYER_CHAT = 5;
-  // 玩家被踢
-  SERVER_EVENT_TYPE_PLAYER_KICK = 6;
-  // 玩家死亡
-  SERVER_EVENT_TYPE_PLAYER_DEATH = 7;
-  // 权限组变更
-  SERVER_EVENT_TYPE_PLAYER_GROUP_CHANGE = 8;
 }
 
 // ServerEventStreamRequest 事件上报流请求
-// 通过 oneof event 携带不同类型的事件数据
 message ServerEventStreamRequest {
   // 事件类型
   ServerEventType event_type = 1;
@@ -55,20 +34,6 @@ message ServerEventStreamRequest {
   oneof event {
     // 心跳事件
     HeartbeatEvent heartbeat_event = 11;
-    // 玩家加入事件
-    PlayerJoinEvent player_join_event = 12;
-    // 玩家离开事件
-    PlayerQuitEvent player_quit_event = 13;
-    // 玩家切换世界事件
-    PlayerSwitchWorldEvent player_switch_world_event = 14;
-    // 玩家聊天事件
-    PlayerChatEvent player_chat_event = 15;
-    // 玩家被踢事件
-    PlayerKickEvent player_kick_event = 16;
-    // 玩家死亡事件
-    PlayerDeathEvent player_death_event = 17;
-    // 权限组变更事件
-    PlayerGroupChangeEvent player_group_change_event = 18;
   }
 }
 
@@ -87,220 +52,70 @@ message HeartbeatEvent {
   double tps = 2;
   // 在线玩家数量
   int32 online_player = 3;
-  // 在线玩家列表
-  repeated PlayerStatus players = 4;
+  // CPU 信息
+  CpuInfo cpu_info = 5;
+  // 内存信息
+  MemoryInfo memory_info = 6;
+  // 磁盘信息
+  DiskInfo disk_info = 7;
+  // JVM 信息
+  JvmInfo jvm_info = 8;
+  // 版本信息
+  ServerVersionInfo version_info = 9;
+  // 世界列表
+  repeated WorldInfo worlds = 10;
 }
 
-// PlayerJoinEvent 玩家加入事件
-message PlayerJoinEvent {
-  // 玩家 UUID
-  string player_uuid = 1;
-  // 玩家用户名
-  string player_name = 2;
-  // 服务器名称
-  string server_name = 3;
+// CpuInfo CPU 信息
+message CpuInfo {
+  // CPU 核心数
+  int32 cores = 1;
+  // CPU 使用率（百分比）
+  double usage_percent = 2;
+}
+
+// MemoryInfo 内存信息
+message MemoryInfo {
+  // 总内存（字节）
+  int64 total_bytes = 1;
+  // 已用内存（字节）
+  int64 used_bytes = 2;
+  // 空闲内存（字节）
+  int64 free_bytes = 3;
+}
+
+// DiskInfo 磁盘信息
+message DiskInfo {
+  // 总磁盘空间（字节）
+  int64 total_bytes = 1;
+  // 已用磁盘空间（字节）
+  int64 used_bytes = 2;
+}
+
+// JvmInfo JVM 信息
+message JvmInfo {
+  // JVM 最大内存（字节）
+  int64 max_memory_bytes = 1;
+  // JVM 已用内存（字节）
+  int64 used_memory_bytes = 2;
+}
+
+// ServerVersionInfo 服务器版本信息
+message ServerVersionInfo {
+  // 服务器版本
+  string server_version = 1;
+  // Minecraft 版本
+  string mc_version = 2;
+}
+
+// WorldInfo 世界信息
+message WorldInfo {
   // 世界名称
-  string world_name = 4;
-  // 玩家权限组名称
-  string group_name = 5;
-}
-
-// PlayerQuitEvent 玩家离开事件
-message PlayerQuitEvent {
-  // 玩家 UUID
-  string player_uuid = 1;
-  // 玩家用户名
-  string player_name = 2;
-  // 服务器名称
-  string server_name = 3;
-}
-
-// PlayerSwitchWorldEvent 玩家切换世界事件
-message PlayerSwitchWorldEvent {
-  // 玩家 UUID
-  string player_uuid = 1;
-  // 新世界名称
-  string new_world_name = 2;
-  // 服务器名称
-  string server_name = 3;
-}
-
-// PlayerChatEvent 玩家聊天事件
-message PlayerChatEvent {
-  // 玩家 UUID
-  string player_uuid = 1;
-  // 玩家用户名
-  string player_name = 2;
-  // 服务器名称
-  string server_name = 3;
-  // 世界名称
-  string world_name = 4;
-  // 聊天消息内容
-  string message = 5;
-}
-
-// PlayerKickEvent 玩家被踢事件
-message PlayerKickEvent {
-  // 玩家 UUID
-  string player_uuid = 1;
-  // 玩家用户名
-  string player_name = 2;
-  // 服务器名称
-  string server_name = 3;
-  // 世界名称
-  string world_name = 4;
-  // 踢出原因
-  string reason = 5;
-}
-
-// PlayerDeathEvent 玩家死亡事件
-message PlayerDeathEvent {
-  // 玩家 UUID
-  string player_uuid = 1;
-  // 玩家用户名
-  string player_name = 2;
-  // 服务器名称
-  string server_name = 3;
-  // 世界名称
-  string world_name = 4;
-  // 死亡消息
-  string death_message = 5;
-}
-
-// PlayerGroupChangeEvent 权限组变更事件
-message PlayerGroupChangeEvent {
-  // 玩家 UUID
-  string player_uuid = 1;
-  // 玩家用户名
-  string player_name = 2;
-  // 新权限组名称
-  string group_name = 3;
-  // 旧权限组名称
-  string old_group_name = 4;
-}
-
-// ============================================================================
-// ServerQuery 相关消息
-// ============================================================================
-
-// ServerQueryRequest Java 端发送的查询结果
-// 通过 oneof result 携带不同类型的查询结果
-message ServerQueryRequest {
-  // 请求 ID（与 Go 端发起查询时的 request_id 对应）
-  string request_id = 1;
-  // 查询结果
-  oneof result {
-    // 玩家状态查询结果
-    QueryPlayerStatusResult player_status_result = 11;
-    // 服务器状态查询结果
-    QueryServerStatusResult server_status_result = 12;
-    // 权限检查结果
-    QueryCheckPermissionResult check_permission_result = 13;
-    // 权限组查询结果
-    QueryPlayerGroupsResult player_groups_result = 14;
-  }
-}
-
-// ServerQueryResponse Go 端发送的查询请求
-// 通过 oneof query 携带不同类型的查询参数
-message ServerQueryResponse {
-  // 基础响应
-  xBase.BaseResponse base_response = 1;
-  // 请求 ID
-  string request_id = 2;
-  // 查询参数
-  oneof query {
-    // 查询玩家状态
-    QueryPlayerStatusQuery player_status_query = 11;
-    // 查询服务器状态
-    QueryServerStatusQuery server_status_query = 12;
-    // 检查玩家权限
-    QueryCheckPermissionQuery check_permission_query = 13;
-    // 获取玩家权限组
-    QueryPlayerGroupsQuery player_groups_query = 14;
-  }
-}
-
-// PlayerStatus 玩家状态信息（保留用于 ServerStatusResult 内嵌）
-message PlayerStatus {
-  // 玩家 UUID
-  string player_uuid = 1;
-  // 玩家用户名
-  string player_name = 2;
-  // 所在世界名称
-  string world_name = 3;
-}
-
-// ============================================================================
-// ServerQuery — 查询参数消息
-// ============================================================================
-
-// QueryPlayerStatusQuery 查询玩家状态参数
-message QueryPlayerStatusQuery {
-  // 目标玩家 UUID
-  string player_uuid = 1;
-}
-
-// QueryServerStatusQuery 查询服务器状态参数
-message QueryServerStatusQuery {
-  // 目标服务器名称
-  string server_name = 1;
-}
-
-// QueryCheckPermissionQuery 检查权限参数
-message QueryCheckPermissionQuery {
-  // 目标玩家 UUID
-  string player_uuid = 1;
-  // 权限节点
-  string permission_node = 2;
-}
-
-// QueryPlayerGroupsQuery 查询玩家权限组参数
-message QueryPlayerGroupsQuery {
-  // 目标玩家 UUID
-  string player_uuid = 1;
-}
-
-// ============================================================================
-// ServerQuery — 查询结果消息
-// ============================================================================
-
-// QueryPlayerStatusResult 玩家状态查询结果
-message QueryPlayerStatusResult {
-  // 是否在线
-  bool online = 1;
-  // 所在服务器名称（在线时）
-  string server_name = 2;
-  // 所在世界名称（在线时）
-  string world_name = 3;
-  // 玩家用户名
-  string player_name = 4;
-  // 最后在线时间（Unix 毫秒）
-  int64 last_seen = 5;
-}
-
-// QueryServerStatusResult 服务器状态查询结果
-message QueryServerStatusResult {
-  // 在线玩家列表
-  repeated PlayerStatus players = 1;
-  // 在线玩家数
-  int32 online_players = 2;
-  // 服务器 TPS
-  double tps = 3;
-  // 最后心跳时间（Unix 毫秒）
-  int64 last_heartbeat = 4;
-}
-
-// QueryCheckPermissionResult 权限检查结果
-message QueryCheckPermissionResult {
-  // 是否拥有该权限
-  bool has_permission = 1;
-}
-
-// QueryPlayerGroupsResult 玩家权限组查询结果
-message QueryPlayerGroupsResult {
-  // 主权限组
-  string primary_group = 1;
-  // 所有权限组
-  repeated string groups = 2;
+  string world_name = 1;
+  // 玩家数量
+  int32 player_count = 2;
+  // 实体数量
+  int32 entity_count = 3;
+  // 已加载区块数
+  int32 loaded_chunks = 4;
 }

@@ -1,9 +1,9 @@
-name: server-status
+name: frontleaves-status
 description: $description
 prefix: FLSS
 version: '${version}'
 
-main: com.frontleaves.plugins.serverStatus.ServerStatus
+main: com.frontleaves.plugins.status.FrontleavesStatus
 api-version: '1.21.1'
 load: POSTWORLD
 
@@ -11,9 +11,6 @@ dependencies:
   server:
     frontleaves-lib:
       required: true
-      load: BEFORE
-    LuckPerms:
-      required: false
       load: BEFORE
 
 authors: [ xiao_lfeng ]

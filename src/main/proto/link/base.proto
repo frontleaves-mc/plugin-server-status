@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xBase;
 
-option java_package = "com.frontleaves.plugins.serverStatus.grpc.generated";
+option java_package = "com.frontleaves.plugins.status.grpc.generated";
 option java_outer_classname = "BaseProto";
 option go_package = ".;xGrpcGenerate";
 

@@ -1,15 +1,14 @@
-# AGENTS.md — server-status
+# AGENTS.md — frontleaves-status
 
 > 本文件为 AI 代理提供项目上下文，确保修改代码时遵循已有架构和约定。
 
 ## 项目概述
 
-Paper 1.21.1 插件，作为 gRPC 客户端将 Minecraft 服务器实时状态和玩家事件上报至 Go 后端（frontleaves-plugin）。
+Paper 1.21.1 插件，作为 gRPC 客户端将 Minecraft 服务器心跳和系统状态上报至 Go 后端（frontleaves-plugin）。
 
-- **主类**: `ServerStatus.java` — 生命周期管理（onEnable / onDisable）
-- **gRPC 模式**: Unary RPC（BlockingStub）+ 双向流式 RPC（AsyncStub）
+- **主类**: `FrontleavesStatus.java` — 生命周期管理（onEnable / onDisable）
+- **gRPC 模式**: Client Stream（AsyncStub）— 持续上报心跳事件
 - **认证**: `plugin-name` + `plugin-secret-key` 通过 gRPC metadata 鉴权，由 frontleaves-lib 提供
-- **软依赖**: LuckPerms（未安装时优雅降级）
 
 ## 架构
 
@@ -17,20 +16,12 @@ Paper 1.21.1 插件，作为 gRPC 客户端将 Minecraft 服务器实时状态�
                     ┌─────────────────────────────────────────────┐
                     │          Minecraft Server (Paper 1.21.1)    │
                     │                                             │
-                    │  EventListener  ──runTaskAsync──┐          │
-                    │         │                       │          │
-                    │  LuckPermsHook ──runTaskAsync──┤          │
-                    │         │                       ▼          │
-                    │         │              StatusGrpcService   │
-                    │         │              (BlockingStub)      │
-                    │         │              + safeCall 包装     │
-                    │         │                       │          │
-                    │  StatusCollector (TPS)          │          │
-                    │         │                       │          │
-                    │         ▼                       ▼          │
-                    │  ServerQueryStreamHandler ◄── AsyncStub    │
-                    │  (双向流 + 自动重连)                         │
-                    └─────────────────────┬─────────────────────┘
+                    │  StatusCollector (TPS + 系统信息)            │
+                    │         │                                   │
+                    │         ▼                                   │
+                    │  ServerEventStreamHandler                   │
+                    │  (Client Stream + 自动重连)                  │
+                    └─────────────────────┬───────────────────────┘
                                           │ gRPC
                                           ▼
                                   ┌───────────────┐
@@ -43,94 +34,68 @@ Paper 1.21.1 插件，作为 gRPC 客户端将 Minecraft 服务器实时状态�
 
 ```
 src/main/
-├── java/com/frontleaves/plugins/serverStatus/
-│   ├── ServerStatus.java                    # 主类：生命周期管理、组件初始化与关闭
+├── java/com/frontleaves/plugins/status/
+│   ├── FrontleavesStatus.java               # 主类：生命周期管理、组件初始化与关闭
 │   ├── grpc/
-│   │   ├── StatusGrpcService.java           # Unary RPC 客户端 (BlockingStub + AsyncStub)
-│   │   └── ServerQueryStreamHandler.java    # 双向流处理器 (AsyncStub + 自动重连)
-│   ├── listener/
-│   │   └── EventListener.java               # Bukkit 事件监听 (6 个事件处理器)
-│   ├── luckperms/
-│   │   └── LuckPermsHook.java               # LuckPerms EventBus 集成 + 权限组缓存
+│   │   └── ServerEventStreamHandler.java    # Client Stream 处理器 (AsyncStub + 自动重连)
 │   └── service/
-│       └── StatusCollector.java             # TPS 计算器 + 在线玩家数统计
+│       └── StatusCollector.java             # TPS 计算器 + 系统信息采集（CPU/内存/磁盘/JVM/版本/世界）
 ├── proto/
 │   ├── link/base.proto                      # BaseResponse 统一响应定义（由 frontleaves-lib 提供）
-│   └── status/v1/status.proto               # ServerStatusService 协议定义 (9 RPC)
+│   └── status/v1/status.proto               # ServerStatusService 协议定义 (仅心跳)
 └── resources/
-    ├── config.yml                           # 默认配置（grpc.host/port/server-name + auth.secret-key）
-    └── paper-plugin.yml                     # Paper 插件描述（依赖 frontleaves-lib + LuckPerms）
+    ├── config.yml                           # 默认配置（grpc.server-name + heartbeat-interval-seconds，连接参数由 frontleaves-lib 集中管理）
+    └── paper-plugin.yml                     # Paper 插件描述（依赖 frontleaves-lib）
 ```
 
-## RPC 列表
+## 心跳事件字段
 
-### Unary RPC (Java → Go，BlockingStub)
+HeartbeatEvent 包含以下信息：
 
-| RPC | 请求类型 | Go 端状态 | 说明 |
-|-----|---------|-----------|------|
-| `PlayerJoin` | `PlayerEventRequest` | 已实现 | 玩家加入（含 groupName 字段） |
-| `PlayerQuit` | `PlayerEventRequest` | 已实现 | 玩家离开 |
-| `PlayerSwitchWorld` | `PlayerSwitchWorldRequest` | 已实现 | 切换世界 |
-| `ServerHeartbeat` | `ServerHeartbeatRequest` | 已实现 | 心跳上报（在线玩家数 + TPS） |
-| `PlayerChat` | `PlayerChatRequest` | 待实现 | 聊天消息 |
-| `PlayerKick` | `PlayerKickRequest` | 待实现 | 被踢出 |
-| `PlayerDeath` | `PlayerDeathRequest` | 待实现 | 死亡 |
-| `PlayerGroupChange` | `PlayerGroupChangeRequest` | 待实现 | 权限组变更（LuckPerms 触发） |
-
-### 双向流式 RPC (AsyncStub)
-
-| RPC | 方向 | 说明 |
-|-----|------|------|
-| `ServerQuery` | Go → Java → Go | Go 端发送 `ServerQueryResponse`（查询请求），Java 端处理并返回 `ServerQueryRequest`（查询结果） |
-
-**ServerQuery 支持的查询事件 (QueryEvent enum)**:
-
-| 事件 | 编号 | 依赖 | 说明 |
-|------|------|------|------|
-| `QUERY_EVENT_GET_PLAYER_STATUS` | 1 | 无 | 查询玩家在线状态、所在服务器/世界 |
-| `QUERY_EVENT_GET_SERVER_STATUS` | 2 | 无 | 查询在线玩家列表、TPS |
-| `QUERY_EVENT_CHECK_PERMISSION` | 3 | LuckPerms | 检查玩家权限节点 |
-| `QUERY_EVENT_GET_PLAYER_GROUPS` | 4 | LuckPerms | 获取玩家主权限组和所有权限组 |
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `server_name` | `string` | 服务器名称 |
+| `tps` | `double` | 服务器 TPS |
+| `online_player` | `int32` | 在线玩家数量 |
+| `cpu_info` | `CpuInfo` | CPU 核心数 + 使用率 |
+| `memory_info` | `MemoryInfo` | 操作系统总/已用/空闲内存 |
+| `disk_info` | `DiskInfo` | 磁盘总/已用空间 |
+| `jvm_info` | `JvmInfo` | JVM 最大/已用堆内存 |
+| `version_info` | `ServerVersionInfo` | 服务器版本 + MC 版本 |
+| `worlds` | `repeated WorldInfo` | 世界列表（玩家数/实体数/区块数） |
 
 ## 关键设计模式
 
-### safeCall 包装
+### 系统信息采集
 
-所有 Unary RPC 调用通过 `StatusGrpcService.safeCall()` 包装：
-- `UNIMPLEMENTED` 状态码 → `info` 级别日志（Go 端待开发）
-- 其他异常 → `warning` 级别日志
-- 绝不抛出异常到调用方
+`StatusCollector` 在每次心跳时实时采集：
+- **CPU**: `OperatingSystemMXBean.getProcessCpuLoad()` 获取进程 CPU 使用率
+- **内存**: `OperatingSystemMXBean.getTotalMemorySize()` / `getFreeMemorySize()` 获取物理内存
+- **磁盘**: `File.getTotalSpace()` / `getUsableSpace()` 获取磁盘使用
+- **JVM**: `Runtime.maxMemory()` / `totalMemory()` / `freeMemory()` 获取堆内存
+- **版本**: `Bukkit.getVersion()` + `Bukkit.getMinecraftVersion()`
+- **世界**: `Bukkit.getWorlds()` 遍历获取玩家数/实体数/已加载区块数
 
-### 异步执行
+### Client Stream 自动重连
 
-- 所有事件处理中的 RPC 调用通过 `Bukkit.getScheduler().runTaskAsynchronously()` 执行
-- 心跳上报使用 `runTaskTimerAsynchronously()` 定时任务
-- TPS 采集使用 `runTaskTimer()` 在主线程执行（每 tick 记录时间戳）
-
-### 双向流自动重连
-
-`ServerQueryStreamHandler` 使用指数退避重连：
+`ServerEventStreamHandler` 使用指数退避重连：
 - 初始延迟 5000ms，每次翻倍，最大 60000ms
 - 连接成功后重置延迟
 - `requestObserver` 声明为 `volatile` 保证线程可见性
 - 重连由 `ScheduledExecutorService`（守护线程）驱动
+- 使用 `generation` 计数器防止旧流回调误杀新流
 
-### LuckPerms 优雅降级
+### ConnectivityMonitor 集成
 
-- `LuckPermsHook.init()` 检测 LuckPerms 是否安装，未安装返回 `null`
-- `EventListener` 和 `ServerQueryStreamHandler` 对 `luckPermsHook/luckPerms == null` 做空安全处理
-- 权限查询类事件在 LuckPerms 不可用时返回默认值（如 `permissionHas=false`）
-- 使用 `EventBus.subscribe(plugin, ...)` 绑定插件生命周期，自动清理
+通过 `frontleaves-lib` 提供的 `ConnectivityMonitor` 监控通道状态：
+- `TRANSIENT_FAILURE` 时设置 `channelReady = false`，心跳暂停上报
+- `READY` 时设置 `channelReady = true`，心跳恢复
 
 ### 线程安全
 
 - `StatusCollector` 使用 `ConcurrentLinkedDeque` + `AtomicInteger`
-- `LuckPermsHook.groupCache` 使用 `ConcurrentHashMap`
-- `ServerQueryStreamHandler.requestObserver` 使用 `volatile`
-
-### 权限组去重
-
-`LuckPermsHook` 维护 `groupCache`（UUID → 主权限组），`UserDataRecalculateEvent` 触发时对比新旧值，相同则跳过上报。
+- `ServerEventStreamHandler.requestObserver` 使用 `volatile`
+- `channelReady` 使用 `volatile`
 
 ## 代码风格
 
@@ -148,10 +113,9 @@ src/main/
 | 依赖 | 版本 | 作用域 | 说明 |
 |------|------|--------|------|
 | Paper API | 1.21.1-R0.1-SNAPSHOT | provided | Bukkit API |
-| frontleaves-lib | 1.0.0 | provided | gRPC 通道管理 + 认证拦截器 |
+| frontleaves-lib | 1.0.0 | provided | gRPC 通道管理 + 认证拦截器 + 消息 API |
 | gRPC (netty-shaded/protobuf/stub/services) | 1.62.2 | provided | gRPC 框架 |
 | Protobuf | 3.25.3 | provided | Protocol Buffers |
-| LuckPerms API | 5.5 | provided | 权限组管理（软依赖） |
 | javax.annotation-api | 1.3.2 | provided | @NotNull/@Nullable 注解 |
 
 ## 构建 & 验证
@@ -162,15 +126,14 @@ mvn clean compile
 
 # 打包
 mvn clean package
-# 产物: target/server-status-1.0.0.jar
+# 产物: target/frontleaves-status-1.0.0.jar
 ```
 
 ## 约束 & 注意事项
 
 1. **Proto 字段编号约定**: 业务 message 的字段编号从 11 开始（1-10 预留给内部/公共字段如 `BaseResponse`），新增字段时不可修改已有编号
-2. **禁止在主线程执行 gRPC 调用**: 所有 RPC 调用必须通过 `runTaskAsynchronously` 或异步定时任务执行
-3. **LuckPerms 是软依赖**: 任何使用 LuckPerms API 的地方必须做空安全检查，不可假设其存在
-4. **gRPC 通道由 frontleaves-lib 管理**: 不要自行创建或关闭 `ManagedChannel`（主类 `onDisable` 中调用 `channel.shutdownNow()` 是唯一例外）
-5. **EventBus subscribe 绑定插件**: `subscribe(plugin, EventClass, handler)` 自动在插件卸载时取消订阅，无需手动 unregister
-6. **TPS 采集必须在主线程**: `recordTick()` 依赖 Bukkit 调度器主线程 tick，不可异步化
-7. **config.yml 中 `plugin-secret-key` 为必填项**: 为空时插件在 `onEnable` 阶段拒绝启动（`setEnabled(false)`）
+2. **禁止在主线程执行 gRPC 调用**: 心跳上报通过 `runTaskTimerAsynchronously()` 执行
+3. **gRPC 通道由 frontleaves-lib 管理**: 连接参数（host、port、secretKey）从 lib 的 config.yml 集中读取，业务插件仅调用 `createChannel(pluginName)`。不要自行创建或关闭 `ManagedChannel`。使用 `/frontleaves-lib reload` 可重载配置并重建所有通道
+4. **TPS 采集必须在主线程**: `recordTick()` 依赖 Bukkit 调度器主线程 tick，不可异步化
+5. **plugin-secret-key 由 frontleaves-lib 统一校验**: secretKey 配置已集中到 lib 的 config.yml，为空时 `createChannel()` 抛出 `IllegalStateException`，业务插件无需自行校验
+6. **玩家事件和查询不属于本插件**: PlayerJoin/Quit/Chat/Kick/Death/GroupChange 事件和 ServerQuery 双向流由 essentials 插件管理

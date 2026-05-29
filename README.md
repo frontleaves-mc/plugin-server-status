@@ -1,4 +1,4 @@
-# Server-Status
+# Frontleaves-Status
 
 FrontLeaves MC 服务器状态监控插件——通过 gRPC 将 Minecraft 服务器实时状态与玩家事件上报至 Go 后端，并支持双向流式查询通道。
 
@@ -69,11 +69,11 @@ flowchart TB
 mvn clean package
 ```
 
-构建产物位于 `target/server-status-1.0.0.jar`。
+构建产物位于 `target/frontleaves-status-1.0.0.jar`。
 
 ### 配置
 
-将 JAR 放入服务器的 `plugins/` 目录，首次启动后编辑 `plugins/server-status/config.yml`：
+将 JAR 放入服务器的 `plugins/` 目录，首次启动后编辑 `plugins/frontleaves-status/config.yml`：
 
 ```yaml
 grpc:
@@ -96,8 +96,8 @@ auth:
 │   ├── proto/
 │   │   ├── link/base.proto                          # BaseResponse 统一响应定义
 │   │   └── status/v1/status.proto                   # ServerStatusService (9 RPC)
-│   ├── java/.../serverStatus/
-│   │   ├── ServerStatus.java                        # 主类：生命周期管理、组件初始化
+│   ├── java/.../status/
+│   │   ├── FrontleavesStatus.java                   # 主类：生命周期管理、组件初始化
 │   │   ├── grpc/
 │   │   │   ├── StatusGrpcService.java               # gRPC 客户端 (BlockingStub + AsyncStub)
 │   │   │   └── ServerQueryStreamHandler.java        # 双向流处理器 (自动重连 + 指数退避)

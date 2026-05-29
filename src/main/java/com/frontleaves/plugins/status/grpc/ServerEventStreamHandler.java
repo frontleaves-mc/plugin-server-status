@@ -1,7 +1,7 @@
-package com.frontleaves.plugins.serverStatus.grpc;
+package com.frontleaves.plugins.status.grpc;
 
-import com.frontleaves.plugins.serverStatus.grpc.generated.ServerStatusProto;
-import com.frontleaves.plugins.serverStatus.grpc.generated.ServerStatusServiceGrpc;
+import com.frontleaves.plugins.status.grpc.generated.ServerStatusProto;
+import com.frontleaves.plugins.status.grpc.generated.ServerStatusServiceGrpc;
 import io.grpc.stub.StreamObserver;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
